@@ -1,0 +1,230 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+    ADMIN
+    MANAGER
+    VIEWER
+}
+
+enum ClientStatus {
+    ACTIVE
+    INACTIVE
+    SUSPENDED
+}
+
+enum ProviderStatus {
+    ONLINE
+    OFFLINE
+    MAINTENANCE
+}
+
+enum InvoiceStatus {
+    DRAFT
+    SENT
+    PAID
+    OVERDUE
+    CANCELLED
+}
+
+enum PaymentMethod {
+    CREDIT_CARD
+    BANK_TRANSFER
+    CASH
+    PAYPAL
+    MOBILE_MONEY
+}
+
+enum PaymentStatus {
+    PENDING
+    COMPLETED
+    FAILED
+    REFUNDED
+}
+
+model User {
+    id            String         @id @default(uuid())
+    email         String         @unique
+    password      String
+    name          String
+    role          UserRole       @default(VIEWER)
+    avatar        String?
+    phone         String?
+    isActive      Boolean        @default(true)
+    lastLogin     DateTime?
+    notifications Notification[]
+    createdAt     DateTime       @default(now())
+    updatedAt     DateTime       @updatedAt
+    auditLogs     AuditLog[]
+
+    @@index([email])
+}
+
+model Client {
+    id            String       @id @default(uuid())
+    name          String
+    email         String       @unique
+    company       String
+    phone         String?
+    address       String?
+    taxNumber     String?
+    status        ClientStatus @default(ACTIVE)
+    usage         Int          @default(0) // Total USSD requests
+    creditBalance Float        @default(0)
+    plan          String       @default("basic") // basic, premium, enterprise
+    monthlyRate   Float        @default(0)
+    lastBilled    DateTime?
+    nextBilling   DateTime?
+    createdAt     DateTime     @default(now())
+    updatedAt     DateTime     @updatedAt
+
+    invoices  Invoice[]
+    payments  Payment[]
+    usageLogs UsageLog[]
+
+    @@index([email])
+    @@index([status])
+    @@index([createdAt])
+}
+
+model Provider {
+    id            String         @id @default(uuid())
+    name          String
+    type          String // gateway, sms, api
+    endpoint      String
+    apiKey        String?
+    secretKey     String?
+    status        ProviderStatus @default(OFFLINE)
+    uptime        Float          @default(0) // percentage
+    requests      Int            @default(0) // total requests
+    location      String
+    cpuUsage      Float?
+    memoryUsage   Float?
+    lastHeartbeat DateTime?
+    isActive      Boolean        @default(true)
+    createdAt     DateTime       @default(now())
+    updatedAt     DateTime       @updatedAt
+
+    usageLogs UsageLog[]
+
+    @@index([status])
+    @@index([type])
+}
+
+model Invoice {
+    id            String         @id @default(uuid())
+    invoiceNumber String         @unique
+    clientId      String
+    client        Client         @relation(fields: [clientId], references: [id])
+    date          DateTime
+    dueDate       DateTime
+    status        InvoiceStatus  @default(DRAFT)
+    subtotal      Float
+    tax           Float          @default(0)
+    discount      Float          @default(0)
+    total         Float
+    notes         String?
+    paymentMethod PaymentMethod?
+    paidDate      DateTime?
+    items         Json // Array of billing items
+    pdfUrl        String?
+    sentAt        DateTime?
+    createdAt     DateTime       @default(now())
+    updatedAt     DateTime       @updatedAt
+
+    payments Payment[]
+
+    @@index([invoiceNumber])
+    @@index([clientId])
+    @@index([status])
+    @@index([dueDate])
+}
+
+model Payment {
+    id            String        @id @default(uuid())
+    invoiceId     String
+    invoice       Invoice       @relation(fields: [invoiceId], references: [id])
+    clientId      String
+    client        Client        @relation(fields: [clientId], references: [id])
+    amount        Float
+    method        PaymentMethod
+    status        PaymentStatus @default(PENDING)
+    reference     String
+    transactionId String?
+    notes         String?
+    processedAt   DateTime?
+    createdAt     DateTime      @default(now())
+    updatedAt     DateTime      @updatedAt
+
+    @@index([reference])
+    @@index([clientId])
+    @@index([invoiceId])
+    @@index([status])
+}
+
+model UsageLog {
+    id         String    @id @default(uuid())
+    clientId   String
+    client     Client    @relation(fields: [clientId], references: [id])
+    providerId String?
+    provider   Provider? @relation(fields: [providerId], references: [id])
+    requests   Int       @default(0)
+    duration   Int? // in milliseconds
+    success    Boolean   @default(true)
+    cost       Float     @default(0)
+    timestamp  DateTime  @default(now())
+    metadata   Json?
+
+    @@index([clientId])
+    @@index([providerId])
+    @@index([timestamp])
+}
+
+model Notification {
+    id        String   @id @default(uuid())
+    userId    String
+    user      User     @relation(fields: [userId], references: [id])
+    title     String
+    message   String
+    type      String // info, warning, success, error
+    isRead    Boolean  @default(false)
+    actionUrl String?
+    createdAt DateTime @default(now())
+
+    @@index([userId])
+    @@index([isRead])
+    @@index([createdAt])
+}
+
+model AuditLog {
+    id        String   @id @default(uuid())
+    userId    String?
+    user      User?    @relation(fields: [userId], references: [id])
+    action    String
+    entity    String
+    entityId  String?
+    changes   Json?
+    ipAddress String?
+    userAgent String?
+    createdAt DateTime @default(now())
+
+    @@index([userId])
+    @@index([entity])
+    @@index([createdAt])
+}
+
+model Setting {
+    id          String   @id @default(uuid())
+    key         String   @unique
+    value       String
+    description String?
+    category    String   @default("general")
+    updatedAt   DateTime @updatedAt
+    updatedBy   String?
+}
